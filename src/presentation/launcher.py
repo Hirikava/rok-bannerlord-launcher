@@ -13,14 +13,6 @@ from src.domain.package_version import PackageVersion
 from src.external_services.rok_packages_service.rok_packages_service import RokPackagesService
 from src.infrastructure.repositories.local_version_repository.local_version_repository import LocalVersionRepository
 
-ROK_BANNERLORD_PACKAGE_NAME = "rok-bannerlord"
-TESSERACT_OCR_PACKAGE_NAME = "tesseract-ocr"
-ADB_TOOLS_PACKAGE_NAME = "adb-platform-tools"
-ABOBA_PACKAGE_NAME = "aboba"
-
-PACKAGES_TO_UPDATE = [
-    ABOBA_PACKAGE_NAME]
-
 
 class FileDownloadingInfo:
     file_total_bytes: int
@@ -63,20 +55,22 @@ class RokBannerlordLauncher:
 
     def __init__(
             self,
-            pm_server_host: str,
-            pm_server_port: int,
+            host: str,
+            port: int,
             user_api_key: str):
 
         self.rok_packages_service = RokPackagesService(
-            host=pm_server_host,
-            port=pm_server_port,
+            host=host,
+            port=port,
             user_api_key=user_api_key)
 
         self.local_version_storage = LocalVersionRepository()
 
-    async def check_packages_versions(self) -> list[PackageVersion]:
+    async def check_packages_versions(
+            self,
+            package_names: list[str]) -> list[PackageVersion]:
         packages_to_update = list()
-        for package_name in PACKAGES_TO_UPDATE:
+        for package_name in package_names:
             server_version: PackageVersion = await self.rok_packages_service.get_latest_package_version(
                 package_name=package_name)
             local_version: PackageVersion = await self.local_version_storage.get_package_current_version(

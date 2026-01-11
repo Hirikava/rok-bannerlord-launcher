@@ -3,14 +3,14 @@ import enum
 import os
 import subprocess
 import sys
-import configparser
 from pathlib import Path
 
-import imgui
-import glfw
 import OpenGL.GL as gl
+import glfw
+import imgui
 from imgui.integrations.glfw import GlfwRenderer
 
+from src.domain.launcher_state import LauncherState
 from src.domain.package_version import PackageVersion
 from src.presentation.launcher import UpdatePackageProcessInfo, RokBannerlordLauncher
 
@@ -65,14 +65,6 @@ def format_bytes_auto(bytes_value: int | float) -> str:
         return f"{size:.2f} {units[i]}"
 
 
-class LauncherState(enum.IntEnum):
-    CHECKING_FOR_UPDATES = 0
-    ASK_FOR_UPDATE = 1
-    READY_TO_RUN = 2
-    UPDATING = 3
-    EXIT = 4
-
-
 def get_progress(
         current: int,
         total: int) -> float:
@@ -86,6 +78,8 @@ class RokBannerlordLauncherApp:
     updating_task = None
 
     current_state: LauncherState = LauncherState.CHECKING_FOR_UPDATES
+    packages_names: list[str] = []
+
     packages_to_update: list[PackageVersion]
 
     current_update_info: UpdatePackageProcessInfo = None
@@ -98,20 +92,24 @@ class RokBannerlordLauncherApp:
             self,
             host: str,
             port: int,
+            user_api_key: str,
+            packages_names: list[str],
             max_downloads: int):
+
         imgui.create_context()
         self.window = impl_glfw_init()
         self.impl = GlfwRenderer(self.window)
         self.launcher = RokBannerlordLauncher(
-            host,
-            port,
-            "123123")
+            host=host,
+            port=port,
+            user_api_key=user_api_key)
         self.max_downloads = min(max_downloads, 8)
+        self.packages_names = packages_names
 
     async def checking_for_update(self):
         if self.checking_for_update_task is None:
             loop = asyncio.get_running_loop()
-            self.checking_for_update_task = loop.create_task(self.launcher.check_packages_versions())
+            self.checking_for_update_task = loop.create_task(self.launcher.check_packages_versions(self.packages_names))
         if self.checking_for_update_task.done():
             packages_to_update = self.checking_for_update_task.result()
             if len(packages_to_update) == 0:
@@ -187,10 +185,10 @@ class RokBannerlordLauncherApp:
 
             process = subprocess.Popen(
                 [rokb_exe_path.__str__()],
-                stdout=subprocess.DEVNULL,  # Перенаправляем stdout
-                stderr=subprocess.DEVNULL,  # Перенаправляем stderr
-                stdin=subprocess.DEVNULL,  # Перенаправляем stdin
-                close_fds=True,  # Закрываем файловые дескрипторы в дочернем процессе (хорошая практика)
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
                 creationflags=subprocess.DETACHED_PROCESS)
             self.current_state = LauncherState.EXIT
 
@@ -240,23 +238,3 @@ class RokBannerlordLauncherApp:
             self.impl.render(imgui.get_draw_data())
             glfw.swap_buffers(self.window)
             await asyncio.sleep(0.05)
-
-
-async def main():
-    #config = configparser.ConfigParser()
-    #config.read('launcher.ini')
-
-    host = "localhost"
-    port = 50052
-
-    #max_downloads = config.getint('common', 'max_downloads')
-    launcher_app = RokBannerlordLauncherApp(
-        host,
-        port,
-        4)
-
-    await launcher_app.run()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

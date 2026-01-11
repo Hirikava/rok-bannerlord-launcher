@@ -1,7 +1,7 @@
 from rok_bannerlord_package_tools.models.file_info import FileInfo
 from rok_bannerlord_package_tools.models.manifest import Manifest
-from rok_bannerlord_proto.proto_vendor import ManifestFileInfoDto
-from rok_bannerlord_proto.proto_vendor.rok_bannerlord_packages import GetPackageManifestQueryResponse
+from rok_bannerlord_proto.proto_vendor.rok_bannerlord_packages import GetPackageManifestQueryResponse, \
+    ManifestFileInfoDto
 
 
 class GetPackageManifestConverter:

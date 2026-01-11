@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, AsyncGenerator
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from grpclib.client import Channel
@@ -10,6 +10,8 @@ from src.domain.package_version import PackageVersion
 from src.external_services.rok_packages_service.converters.download_file_converter import DownloadFileConverter
 from src.external_services.rok_packages_service.converters.get_package_manifest_converter import \
     GetPackageManifestConverter
+
+from rok_bannerlord_proto.well_known_headers import USER_API_KEY_HEADER
 
 
 class RokPackagesService:
@@ -25,7 +27,7 @@ class RokPackagesService:
             channel,
             # TODO move api key names into one package
             metadata=[
-                ("x-rokb-api-key", user_api_key)
+                (USER_API_KEY_HEADER, user_api_key)
             ])
 
     async def get_latest_package_version(
