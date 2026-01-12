@@ -4,4 +4,5 @@ git+ssh://git@github.com/Hirikava/rok-bannerlord-package-tools.git@main
 pydantic
 aiofiles
 punq
+mediatr
 imgui[glfw]

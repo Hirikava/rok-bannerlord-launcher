@@ -1,107 +1,64 @@
 import asyncio
 import os
-
-from collections.abc import AsyncGenerator
+import typing
 from pathlib import Path
-from typing import Any
 
+from mediatr import Mediator
 from rok_bannerlord_package_tools.files_utils import FilesUtils
 from rok_bannerlord_package_tools.manifest_utils import ManifestUtils
 from rok_bannerlord_package_tools.models.file_info import FileInfo
+from rok_bannerlord_package_tools.models.manifest_diff import ManifestsDiff
 
+from src.application.update_package.contracts.file_downloading_info import FileDownloadingInfoInternal
+from src.application.update_package.contracts.update_package_info import UpdatePackageProcessInfoInternal
+from src.application.update_package.contracts.update_package_request import UpdatePackageRequestInternal
+from src.application.update_package.contracts.update_package_response import UpdatePackageResponseInternal
 from src.domain.package_version import PackageVersion
 from src.external_services.rok_packages_service.rok_packages_service import RokPackagesService
 from src.infrastructure.repositories.local_version_repository.local_version_repository import LocalVersionRepository
 
 
-class FileDownloadingInfo:
-    file_total_bytes: int
-    file_downloaded_bytes: int
-    file_name: str
-
-    def __init__(
-            self,
-            file_total_bytes: int,
-            file_downloaded_bytes: int,
-            file_name: str):
-        self.file_total_bytes = file_total_bytes
-        self.file_downloaded_bytes = file_downloaded_bytes
-        self.file_name = file_name
-
-
-class UpdatePackageProcessInfo:
-    files_left: int
-    total_bytes_read: int
-    total_bytes: int
-    file_downloading_infos: list[FileDownloadingInfo]
-
-    def __init__(
-            self,
-            files_left: int,
-            total_bytes_read: int,
-            total_bytes: int,
-            max_downloading_processes: int):
-        self.files_left = files_left
-        self.total_bytes_read = total_bytes_read
-        self.total_bytes = total_bytes
-        self.file_downloading_infos = list()
-        for i in range(max_downloading_processes):
-            self.file_downloading_infos.append(None)
-
-
-class RokBannerlordLauncher:
+@typing.final
+@Mediator.handler
+class UpdatePackageHandlerInternal:
     rok_packages_service: RokPackagesService
     local_version_repository: LocalVersionRepository
 
     def __init__(
             self,
-            host: str,
-            port: int,
-            user_api_key: str):
+            rok_packages_service: RokPackagesService,
+            local_version_repository: LocalVersionRepository):
+        self.rok_packages_service = rok_packages_service
+        self.local_version_repository = local_version_repository
 
-        self.rok_packages_service = RokPackagesService(
-            host=host,
-            port=port,
-            user_api_key=user_api_key)
-
-        self.local_version_storage = LocalVersionRepository()
-
-    async def check_packages_versions(
+    async def handle(
             self,
-            package_names: list[str]) -> list[PackageVersion]:
-        packages_to_update = list()
-        for package_name in package_names:
-            server_version: PackageVersion = await self.rok_packages_service.get_latest_package_version(
-                package_name=package_name)
-            local_version: PackageVersion = await self.local_version_storage.get_package_current_version(
-                package_name=package_name)
-
-            if local_version is None:
-                packages_to_update.append(server_version)
-                continue
-
-            if (local_version.package_version != server_version.package_version and local_version.package_publish_time
-                    < server_version.package_publish_time):
-                packages_to_update.append(server_version)
-
-        return packages_to_update
-
-    async def update_package(
-            self,
-            package_version: PackageVersion,
-            max_parallel_downloads: int = 4) -> AsyncGenerator[UpdatePackageProcessInfo, Any]:
-
+            request: UpdatePackageRequestInternal) -> UpdatePackageResponseInternal:
         local_manifest = await FilesUtils.create_manifest_from_directory_async(
-            directory_path=package_version.package_name)
+            directory_path=request.package_version.package_name)
 
         server_manifest = await self.rok_packages_service.get_package_manifest(
-            package_name=package_version.package_name,
-            package_version=package_version.package_version)
+            package_name=request.package_version.package_name,
+            package_version=request.package_version.package_version)
 
         manifest_diff = ManifestUtils.create_manifest_diff(
             target_manifest=server_manifest,
             existing_manifest=local_manifest)
 
+        generator = self.__update_package_internal_async(
+            manifest_diff,
+            request.package_version,
+            request.max_parallel_downloads)
+
+        internal_response = UpdatePackageResponseInternal(generator)
+
+        return internal_response
+
+    async def __update_package_internal_async(
+            self,
+            manifest_diff: ManifestsDiff,
+            package_version: PackageVersion,
+            max_parallel_downloads: int) -> typing.AsyncIterator[UpdatePackageProcessInfoInternal]:
         files_to_download = set(manifest_diff.new_files).union(set(manifest_diff.updated_files))
         files_to_download = list(files_to_download)
         files_to_delete = manifest_diff.removed_files
@@ -110,7 +67,7 @@ class RokBannerlordLauncher:
         total_bytes = sum([x.file_size for x in files_to_download])
         current_total_bytes_read = 0
 
-        update_info = UpdatePackageProcessInfo(
+        update_info = UpdatePackageProcessInfoInternal(
             total_files_count,
             current_total_bytes_read,
             total_bytes,
@@ -123,6 +80,7 @@ class RokBannerlordLauncher:
             index=x)) for x in range(max_parallel_downloads)]
 
         completed_update_tasks = [x for x in update_tasks if not x.done()]
+
         while completed_update_tasks.__len__() > 0:
             await asyncio.sleep(2)
             yield update_info
@@ -137,13 +95,13 @@ class RokBannerlordLauncher:
             full_path = Path.cwd() / package_version.package_name / file_to_delete.relative_file_path[1:]
             os.remove(full_path)
 
-        await self.local_version_storage.save_package_current_version(package_version)
+        await self.local_version_repository.save_package_current_version(package_version)
 
     async def __start_download_worker(
             self,
             package_version: PackageVersion,
             package_file_infos: list[FileInfo],
-            update_info: UpdatePackageProcessInfo,
+            update_info: UpdatePackageProcessInfoInternal,
             index: int):
 
         while package_file_infos.__len__() > 0:
@@ -159,7 +117,7 @@ class RokBannerlordLauncher:
                 update_info.files_left -= 1
                 continue
 
-            update_info.file_downloading_infos[index] = FileDownloadingInfo(
+            update_info.file_downloading_infos[index] = FileDownloadingInfoInternal(
                 file_total_bytes=file_to_download.file_size,
                 file_downloaded_bytes=0,
                 file_name=file_to_download.relative_file_path)

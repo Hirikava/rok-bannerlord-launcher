@@ -8,11 +8,16 @@ from pathlib import Path
 import OpenGL.GL as gl
 import glfw
 import imgui
+import punq
 from imgui.integrations.glfw import GlfwRenderer
+from mediatr import Mediator
 
+from src.application.update_package.contracts.update_package_request import UpdatePackageRequestInternal
+from src.application.update_package.contracts.update_package_response import UpdatePackageResponseInternal
+from src.domain.launcher_context import LauncherContext
 from src.domain.launcher_state import LauncherState
 from src.domain.package_version import PackageVersion
-from src.presentation.launcher import UpdatePackageProcessInfo, RokBannerlordLauncher
+from src.utils.format_utils import FormatUtils
 
 
 def impl_glfw_init():
@@ -44,72 +49,34 @@ def impl_glfw_init():
     return window
 
 
-def format_bytes_auto(bytes_value: int | float) -> str:
-    if bytes_value < 0:
-        return "-"
-    if bytes_value == 0:
-        return "0 B"
-
-    base = 1024
-    units = ["B", "KB", "MB", "GB", "TB", "PB"]
-
-    i = 0
-    size = float(bytes_value)
-
-    while size >= base and i < len(units) - 1:
-        size /= base
-        i += 1
-    if i == 0 or size == int(size):
-        return f"{int(size)} {units[i]}"
-    else:
-        return f"{size:.2f} {units[i]}"
-
-
-def get_progress(
-        current: int,
-        total: int) -> float:
-    if total == 0:
-        return 1.0
-    return current / total
-
-
 class RokBannerlordLauncherApp:
     checking_for_update_task = None
     updating_task = None
 
-    current_state: LauncherState = LauncherState.CHECKING_FOR_UPDATES
-    packages_names: list[str] = []
+    launcher_context: LauncherContext
 
-    packages_to_update: list[PackageVersion]
+    packages_names: list[str]
 
-    current_update_info: UpdatePackageProcessInfo = None
-    packages_updated: int = 0
-    current_package_updating: PackageVersion = None
-
-    max_downloads: int = 4
+    mediator: Mediator
+    container: punq.Container
 
     def __init__(
             self,
             host: str,
             port: int,
-            user_api_key: str,
-            packages_names: list[str],
-            max_downloads: int):
+            packages_names: list[str]):
 
         imgui.create_context()
         self.window = impl_glfw_init()
         self.impl = GlfwRenderer(self.window)
-        self.launcher = RokBannerlordLauncher(
-            host=host,
-            port=port,
-            user_api_key=user_api_key)
-        self.max_downloads = min(max_downloads, 8)
+
         self.packages_names = packages_names
 
     async def checking_for_update(self):
         if self.checking_for_update_task is None:
             loop = asyncio.get_running_loop()
             self.checking_for_update_task = loop.create_task(self.launcher.check_packages_versions(self.packages_names))
+
         if self.checking_for_update_task.done():
             packages_to_update = self.checking_for_update_task.result()
             if len(packages_to_update) == 0:
@@ -127,7 +94,9 @@ class RokBannerlordLauncherApp:
 
         if imgui.button("Update"):
             self.current_state = LauncherState.UPDATING
+
         imgui.same_line()
+
         if imgui.button("Close"):
             self.current_state = LauncherState.EXIT
 
@@ -142,14 +111,14 @@ class RokBannerlordLauncherApp:
                 imgui.text(f"Updating {self.current_package_updating.package_name} to version "
                            f" {self.current_package_updating.package_version}")
                 imgui.progress_bar(
-                    get_progress(
+                    FormatUtils.get_progress(
                         self.current_update_info.total_bytes_read,
                         self.current_update_info.total_bytes),
                     size=(200, 20),
                     overlay="")
                 imgui.same_line()
                 imgui.text(
-                    f"{format_bytes_auto(self.current_update_info.total_bytes_read)} / {format_bytes_auto(
+                    f"{FormatUtils.format_bytes_auto(self.current_update_info.total_bytes_read)} / {FormatUtils.format_bytes_auto(
                         self.current_update_info.total_bytes)}")
                 imgui.text(f"Files left: {self.current_update_info.files_left}")
 
@@ -158,14 +127,13 @@ class RokBannerlordLauncherApp:
                         continue
 
                     imgui.progress_bar(
-                        get_progress(
+                        FormatUtils.get_progress(
                             file_update_info.file_downloaded_bytes,
                             file_update_info.file_total_bytes),
                         size=(200, 20),
                         overlay="")
                     imgui.same_line()
                     imgui.text(f"{file_update_info.file_name}")
-
 
             elif self.current_package_updating is not None:
                 imgui.text(f"Gathering manifest for {self.current_package_updating.package_name}")
@@ -200,10 +168,16 @@ class RokBannerlordLauncherApp:
         for package_version in self.packages_to_update:
             self.current_package_updating = package_version
             self.current_update_info = None
-            async for update_process_info in self.launcher.update_package(
-                    package_version=package_version,
-                    max_parallel_downloads=self.max_downloads):
+
+            internal_request = UpdatePackageRequestInternal(
+                package_version=package_version,
+                max_parallel_downloads=4)
+
+            internal_response: UpdatePackageResponseInternal = await self.mediator.send_async(internal_request)
+
+            async for update_process_info in internal_response.update_package_stream:
                 self.current_update_info = update_process_info
+
             self.packages_updated += 1
 
     async def run(self):
