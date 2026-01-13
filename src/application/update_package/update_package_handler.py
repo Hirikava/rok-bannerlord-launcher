@@ -14,6 +14,7 @@ from src.application.update_package.contracts.update_package_info import UpdateP
 from src.application.update_package.contracts.update_package_request import UpdatePackageRequestInternal
 from src.application.update_package.contracts.update_package_response import UpdatePackageResponseInternal
 from src.domain.package_version import PackageVersion
+from src.external_services.rok_packages_service.rok_package_service_factory import RokPackageServiceFactory
 from src.external_services.rok_packages_service.rok_packages_service import RokPackagesService
 from src.infrastructure.repositories.local_version_repository.local_version_repository import LocalVersionRepository
 
@@ -21,19 +22,23 @@ from src.infrastructure.repositories.local_version_repository.local_version_repo
 @typing.final
 @Mediator.handler
 class UpdatePackageHandlerInternal:
-    rok_packages_service: RokPackagesService
+    rok_packages_service_factory: RokPackageServiceFactory
     local_version_repository: LocalVersionRepository
+
+    rok_packages_service: RokPackagesService
 
     def __init__(
             self,
-            rok_packages_service: RokPackagesService,
+            rok_packages_service_factory: RokPackageServiceFactory,
             local_version_repository: LocalVersionRepository):
-        self.rok_packages_service = rok_packages_service
+        self.rok_packages_service_factory = rok_packages_service_factory
         self.local_version_repository = local_version_repository
 
     async def handle(
             self,
             request: UpdatePackageRequestInternal) -> UpdatePackageResponseInternal:
+        self.rok_packages_service = self.rok_packages_service_factory.create(request.user_api_key)
+
         local_manifest = await FilesUtils.create_manifest_from_directory_async(
             directory_path=request.package_version.package_name)
 

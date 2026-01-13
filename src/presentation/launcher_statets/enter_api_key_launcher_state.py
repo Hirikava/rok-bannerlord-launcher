@@ -21,8 +21,11 @@ class EnterApiKeyLauncherState(LauncherStateBase):
     async def on_init(self):
         self.cashed_api_key = self.api_key_repository.get_api_key()
 
+        if self.cashed_api_key is None:
+            self.cashed_api_key = ""
+
     async def run_internal(self):
-        _, self.cashed_api_key = imgui.input_text("Enter api-key", self.cashed_api_key, int_buffer_length=36)
+        _, self.cashed_api_key = imgui.input_text("Enter api-key", self.cashed_api_key, 36)
 
         imgui.same_line()
 

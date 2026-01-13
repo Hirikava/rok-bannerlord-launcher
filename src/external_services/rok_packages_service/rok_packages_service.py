@@ -25,7 +25,6 @@ class RokPackagesService:
         channel = Channel(host=host, port=port)
         self.rok_packages_client = RokBannerlordPackagesServiceStub(
             channel,
-            # TODO move api key names into one package
             metadata=[
                 (USER_API_KEY_HEADER, user_api_key)
             ])

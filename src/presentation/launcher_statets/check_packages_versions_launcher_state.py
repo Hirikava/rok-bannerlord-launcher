@@ -38,7 +38,9 @@ class CheckPackagesVersionsLauncherState(LauncherStateBase):
             raise self.check_package_update_task.exception()
 
     async def __check_packages_internal(self):
-        internal_request = CheckPackagesVersionsRequestInternal(packages_names=self.launcher_context.all_packages_names)
+        internal_request = CheckPackagesVersionsRequestInternal(
+            packages_names=self.launcher_context.all_packages_names,
+            user_api_key=self.launcher_context.user_api_key)
 
         internal_response: CheckPackagesVersionsResponseInternal = await self.mediator.send_async(internal_request)
 

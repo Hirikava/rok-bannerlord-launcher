@@ -1,23 +1,25 @@
 import asyncio
-import enum
-import os
-import subprocess
 import sys
-from pathlib import Path
 
 import OpenGL.GL as gl
 import glfw
 import imgui
+import mediatr
 import punq
 from imgui.integrations.glfw import GlfwRenderer
 from mediatr import Mediator
 
-from src.application.update_package.contracts.update_package_request import UpdatePackageRequestInternal
-from src.application.update_package.contracts.update_package_response import UpdatePackageResponseInternal
+from src.application.application_registrar import ApplicationRegistrar
 from src.domain.launcher_context import LauncherContext
 from src.domain.launcher_state import LauncherState
-from src.domain.package_version import PackageVersion
-from src.utils.format_utils import FormatUtils
+from src.external_services.externa_services_registrar import ExternalServicesRegistrar
+from src.infrastructure.infrastructure_registrar import InfrastructureRegistrar
+from src.presentation.launcher_statets.ask_for_update_launcher_state import AskForUpdateLauncherState
+from src.presentation.launcher_statets.check_packages_versions_launcher_state import CheckPackagesVersionsLauncherState
+from src.presentation.launcher_statets.enter_api_key_launcher_state import EnterApiKeyLauncherState
+from src.presentation.launcher_statets.ready_for_launch_launcher_state import ReadyForLaunchLauncherState
+from src.presentation.launcher_statets.update_packages_launcher_state import UpdatePackagesLauncherState
+from src.presentation.presentation_registrar import PresentationRegistrar
 
 
 def impl_glfw_init():
@@ -49,101 +51,53 @@ def impl_glfw_init():
     return window
 
 
+def crete_custom_handler_class_manager(container: punq.Container):
+    def custom_handler_class_manager(
+            handler_class,
+            is_behavior=False):
+        if is_behavior:
+            # custom logic
+            pass
+        return container.resolve(handler_class)
+
+    return custom_handler_class_manager
+
+
 class RokBannerlordLauncherApp:
-    checking_for_update_task = None
-    updating_task = None
-
-    launcher_context: LauncherContext
-
-    packages_names: list[str]
-
     mediator: Mediator
     container: punq.Container
 
     def __init__(
             self,
-            host: str,
-            port: int,
             packages_names: list[str]):
-
         imgui.create_context()
         self.window = impl_glfw_init()
         self.impl = GlfwRenderer(self.window)
 
         self.packages_names = packages_names
+        self.container = punq.Container()
+        self.mediator = Mediator(
+            handler_class_manager=crete_custom_handler_class_manager(self.container))
 
-    async def checking_for_update(self):
-        if self.checking_for_update_task is None:
-            loop = asyncio.get_running_loop()
-            self.checking_for_update_task = loop.create_task(self.launcher.check_packages_versions(self.packages_names))
+    def register_dependencies(self):
+        self.container.register(mediatr.Mediator, instance=self.mediator)
 
-        if self.checking_for_update_task.done():
-            packages_to_update = self.checking_for_update_task.result()
-            if len(packages_to_update) == 0:
-                self.current_state = LauncherState.READY_TO_RUN
-            else:
-                self.packages_to_update = packages_to_update
-                self.current_state = LauncherState.ASK_FOR_UPDATE
-        else:
-            imgui.text("Checking for updates")
+        PresentationRegistrar.configure(self.container)
+        ApplicationRegistrar.configure(self.container)
+        ExternalServicesRegistrar.configure(self.container)
+        InfrastructureRegistrar.configure(self.container)
 
-    async def ask_for_update(self):
-        imgui.text("You need to update following packages:")
-        for package in self.packages_to_update:
-            imgui.text(f"{package.package_name} - {package.package_version}")
+    async def run_window(self):
+        launcher_context: LauncherContext = self.container.resolve(LauncherContext)
+        launcher_context.set_all_packages_names(self.packages_names)
 
-        if imgui.button("Update"):
-            self.current_state = LauncherState.UPDATING
+        enter_api_key_state: EnterApiKeyLauncherState = self.container.resolve(EnterApiKeyLauncherState)
+        check_for_updates_state: CheckPackagesVersionsLauncherState = self.container.resolve(
+            CheckPackagesVersionsLauncherState)
+        ask_for_update_packages_state: AskForUpdateLauncherState = self.container.resolve(AskForUpdateLauncherState)
+        update_packages_state: UpdatePackagesLauncherState = self.container.resolve(UpdatePackagesLauncherState)
+        ready_for_launch_state: ReadyForLaunchLauncherState = self.container.resolve(ReadyForLaunchLauncherState)
 
-        imgui.same_line()
-
-        if imgui.button("Close"):
-            self.current_state = LauncherState.EXIT
-
-    async def ready_to_launch(self):
-        imgui.text("Everything is up to date.")
-        if imgui.button("Run RokBannerlord"):
-            self.current_state = LauncherState.EXIT
-            tesseract_path = Path.cwd() / "tesseract-ocr"
-            adb_path = Path.cwd() / "adb-platform-tools"
-            rokb_exe_path = Path.cwd() / "rok-bannerlord" / "rok_bannerlord_client.exe"
-            os.environ["PATH"] += os.pathsep + tesseract_path.__str__()
-            os.environ["PATH"] += os.pathsep + adb_path.__str__()
-
-            os.environ["ROKB_WORKDIR"] = Path.cwd().__str__()
-            os.environ["ROKB_ASSETSDIR"] = (Path.cwd() / "rok-bannerlord" / "assets").__str__()
-
-            process = subprocess.Popen(
-                [rokb_exe_path.__str__()],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                close_fds=True,
-                creationflags=subprocess.DETACHED_PROCESS)
-            self.current_state = LauncherState.EXIT
-
-        imgui.same_line()
-        if imgui.button("Exit"):
-            self.current_state = LauncherState.EXIT
-
-    async def __create_update_task(self):
-        for package_version in self.packages_to_update:
-            self.current_package_updating = package_version
-            self.current_update_info = None
-
-            internal_request = UpdatePackageRequestInternal(
-                package_version=package_version,
-                max_parallel_downloads=4)
-
-            internal_response: UpdatePackageResponseInternal = await self.mediator.send_async(internal_request)
-
-            async for update_process_info in internal_response.update_package_stream:
-                self.current_update_info = update_process_info
-
-            self.packages_updated += 1
-
-    async def run(self):
-        imgui.create_context()
         while not glfw.window_should_close(self.window):
             glfw.poll_events()
             self.impl.process_inputs()
@@ -152,25 +106,32 @@ class RokBannerlordLauncherApp:
 
             imgui.set_next_window_position(0, 0)
             imgui.set_next_window_size(imgui.get_io().display_size[0], imgui.get_io().display_size[1])
+            imgui.set_next_window_collapsed(False)
 
-            imgui.begin("Update")
-            if self.current_state == LauncherState.CHECKING_FOR_UPDATES:
-                await self.checking_for_update()
-            elif self.current_state == LauncherState.ASK_FOR_UPDATE:
-                await self.ask_for_update()
-            elif self.current_state == LauncherState.UPDATING:
-                await self.update()
-            elif self.current_state == LauncherState.READY_TO_RUN:
-                await self.ready_to_launch()
-            elif self.current_state == LauncherState.EXIT:
+            imgui.begin("Update", closable=False)
+
+            if launcher_context.state == LauncherState.CHECKING_FOR_UPDATES:
+                await check_for_updates_state.run()
+            elif launcher_context.state == LauncherState.ASK_FOR_UPDATE:
+                await ask_for_update_packages_state.run()
+            elif launcher_context.state == LauncherState.UPDATING:
+                await update_packages_state.run()
+            elif launcher_context.state == LauncherState.READY_TO_RUN:
+                await ready_for_launch_state.run()
+            elif launcher_context.state == LauncherState.ENTER_API_KEY:
+                await enter_api_key_state.run()
+            elif launcher_context.state == LauncherState.EXIT:
                 break
+
             imgui.end()
-
             gl.glClearColor(1.0, 1.0, 1.0, 1)
-
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 
             imgui.render()
             self.impl.render(imgui.get_draw_data())
             glfw.swap_buffers(self.window)
             await asyncio.sleep(0.05)
+
+    async def run(self):
+        self.register_dependencies()
+        await self.run_window()

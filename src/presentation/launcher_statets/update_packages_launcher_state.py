@@ -18,9 +18,9 @@ class UpdatePackagesLauncherState(LauncherStateBase):
     launcher_context: LauncherContext
     mediatr: Mediator
 
-    update_packages_task: asyncio.Task | None
-    package_update_info: UpdatePackageProcessInfoInternal | None
-    current_updating_package: PackageVersion | None
+    update_packages_task: asyncio.Task | None = None
+    package_update_info: UpdatePackageProcessInfoInternal | None = None
+    current_updating_package: PackageVersion | None = None
 
     def __init__(
             self,
@@ -29,7 +29,7 @@ class UpdatePackagesLauncherState(LauncherStateBase):
         self.launcher_context = launcher_context
         self.mediatr = mediatr
 
-    def run_internal(self):
+    async def run_internal(self):
         if self.update_packages_task.done():
             if self.update_packages_task.exception() is not None:
                 raise self.update_packages_task.exception()
@@ -78,7 +78,10 @@ class UpdatePackagesLauncherState(LauncherStateBase):
         for package_to_update in self.launcher_context.packages_to_update:
             self.current_updating_package = package_to_update
 
-            internal_request = UpdatePackageRequestInternal(package_version=package_to_update, max_parallel_downloads=4)
+            internal_request = UpdatePackageRequestInternal(
+                package_version=package_to_update,
+                max_parallel_downloads=4,
+                user_api_key=self.launcher_context.user_api_key)
 
             internal_response: UpdatePackageResponseInternal = await self.mediatr.send_async(internal_request)
 

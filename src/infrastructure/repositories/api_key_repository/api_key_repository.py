@@ -10,7 +10,7 @@ class ApiKeyRepository:
     def save_api_key(
             self,
             api_key: str) -> None:
-        key = winreg.OpenKey(
+        key = winreg.CreateKeyEx(
             winreg.HKEY_CURRENT_USER,
             self.SUB_KEY,
             0,
@@ -23,15 +23,18 @@ class ApiKeyRepository:
             winreg.REG_SZ,
             api_key)
 
-    def get_api_key(self) -> str:
-        key = winreg.OpenKey(
-            winreg.HKEY_LOCAL_MACHINE,
+    def get_api_key(self) -> str | None:
+        key = winreg.CreateKeyEx(
+            winreg.HKEY_CURRENT_USER,
             self.SUB_KEY,
             0,
             winreg.KEY_READ)
 
-        value, value_type = winreg.QueryValueEx(
-            key,
-            self.VALUE_NAME)
+        try:
+            value, value_type = winreg.QueryValueEx(
+                key,
+                self.VALUE_NAME)
 
-        return value
+            return value
+        except Exception as e:
+            return None

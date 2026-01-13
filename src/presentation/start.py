@@ -15,12 +15,7 @@ PACKAGES_TO_UPDATE = [
 
 
 async def main():
-    host = "localhost"
-    port = 7272
-
     launcher_app = RokBannerlordLauncherApp(
-        host=host,
-        port=port,
         packages_names=PACKAGES_TO_UPDATE)
 
     await launcher_app.run()
