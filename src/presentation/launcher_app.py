@@ -100,44 +100,6 @@ class RokBannerlordLauncherApp:
         if imgui.button("Close"):
             self.current_state = LauncherState.EXIT
 
-    async def update(self):
-        if self.updating_task is None:
-            self.updating_task = asyncio.create_task(self.__create_update_task())
-
-        if self.updating_task.done():
-            self.current_state = LauncherState.READY_TO_RUN
-        else:
-            if self.current_update_info is not None:
-                imgui.text(f"Updating {self.current_package_updating.package_name} to version "
-                           f" {self.current_package_updating.package_version}")
-                imgui.progress_bar(
-                    FormatUtils.get_progress(
-                        self.current_update_info.total_bytes_read,
-                        self.current_update_info.total_bytes),
-                    size=(200, 20),
-                    overlay="")
-                imgui.same_line()
-                imgui.text(
-                    f"{FormatUtils.format_bytes_auto(self.current_update_info.total_bytes_read)} / {FormatUtils.format_bytes_auto(
-                        self.current_update_info.total_bytes)}")
-                imgui.text(f"Files left: {self.current_update_info.files_left}")
-
-                for file_update_info in self.current_update_info.file_downloading_infos:
-                    if file_update_info is None:
-                        continue
-
-                    imgui.progress_bar(
-                        FormatUtils.get_progress(
-                            file_update_info.file_downloaded_bytes,
-                            file_update_info.file_total_bytes),
-                        size=(200, 20),
-                        overlay="")
-                    imgui.same_line()
-                    imgui.text(f"{file_update_info.file_name}")
-
-            elif self.current_package_updating is not None:
-                imgui.text(f"Gathering manifest for {self.current_package_updating.package_name}")
-
     async def ready_to_launch(self):
         imgui.text("Everything is up to date.")
         if imgui.button("Run RokBannerlord"):

@@ -21,9 +21,7 @@ async def main():
     launcher_app = RokBannerlordLauncherApp(
         host=host,
         port=port,
-        user_api_key="333",
-        packages_names=PACKAGES_TO_UPDATE,
-        max_downloads=4)
+        packages_names=PACKAGES_TO_UPDATE)
 
     await launcher_app.run()
 
