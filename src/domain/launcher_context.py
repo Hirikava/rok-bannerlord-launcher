@@ -14,6 +14,8 @@ class LauncherContext:
     user_api_key: str | None
     all_packages_names: list[str]
 
+    reset_comment: str | None = None
+
     def __init__(self):
         self.updated_packages = []
         self.packages_to_update = []
@@ -34,6 +36,7 @@ class LauncherContext:
 
         self.user_api_key = user_api_key
         self.state = LauncherState.CHECKING_FOR_UPDATES
+        self.reset_comment = ""
 
     def set_packages_to_updated(
             self,
@@ -42,7 +45,11 @@ class LauncherContext:
             raise InvalidLauncherStateException(self.state, inspect.currentframe().f_code.co_name)
 
         self.packages_to_update = packages_to_update
-        self.state = LauncherState.ASK_FOR_UPDATE
+
+        if len(self.packages_to_update) == 0:
+            self.state = LauncherState.READY_TO_RUN
+        else:
+            self.state = LauncherState.ASK_FOR_UPDATE
 
     def allow_update(self):
         if self.state is not LauncherState.ASK_FOR_UPDATE:
@@ -74,8 +81,11 @@ class LauncherContext:
     def exit(self):
         self.state = LauncherState.EXIT
 
-    def reset_context(self):
+    def reset_context(
+            self,
+            reset_comment: str):
         self.user_api_key = None
         self.updated_packages = []
         self.packages_to_update = []
         self.state = LauncherState.ENTER_API_KEY
+        self.reset_comment = reset_comment

@@ -33,4 +33,8 @@ class EnterApiKeyLauncherState(LauncherStateBase):
             self.api_key_repository.save_api_key(self.cashed_api_key)
 
             self.launcher_context.set_api_key(self.cashed_api_key)
+
             self.reset()
+
+        if self.launcher_context.reset_comment is not None:
+            imgui.text(self.launcher_context.reset_comment)

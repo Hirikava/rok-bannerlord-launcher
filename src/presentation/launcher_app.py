@@ -6,8 +6,11 @@ import glfw
 import imgui
 import mediatr
 import punq
+import rok_bannerlord_proto.rok_bannerlord_grpc_statuses
+from grpclib import GRPCError
 from imgui.integrations.glfw import GlfwRenderer
 from mediatr import Mediator
+from rok_bannerlord_proto.rok_bannerlord_grpc_statuses import RokBannerlordGrpcStatuses
 
 from src.application.application_registrar import ApplicationRegistrar
 from src.domain.launcher_context import LauncherContext
@@ -110,18 +113,22 @@ class RokBannerlordLauncherApp:
 
             imgui.begin("Update", closable=False)
 
-            if launcher_context.state == LauncherState.CHECKING_FOR_UPDATES:
-                await check_for_updates_state.run()
-            elif launcher_context.state == LauncherState.ASK_FOR_UPDATE:
-                await ask_for_update_packages_state.run()
-            elif launcher_context.state == LauncherState.UPDATING:
-                await update_packages_state.run()
-            elif launcher_context.state == LauncherState.READY_TO_RUN:
-                await ready_for_launch_state.run()
-            elif launcher_context.state == LauncherState.ENTER_API_KEY:
-                await enter_api_key_state.run()
-            elif launcher_context.state == LauncherState.EXIT:
-                break
+            try:
+                if launcher_context.state == LauncherState.CHECKING_FOR_UPDATES:
+                    await check_for_updates_state.run()
+                elif launcher_context.state == LauncherState.ASK_FOR_UPDATE:
+                    await ask_for_update_packages_state.run()
+                elif launcher_context.state == LauncherState.UPDATING:
+                    await update_packages_state.run()
+                elif launcher_context.state == LauncherState.READY_TO_RUN:
+                    await ready_for_launch_state.run()
+                elif launcher_context.state == LauncherState.ENTER_API_KEY:
+                    await enter_api_key_state.run()
+                elif launcher_context.state == LauncherState.EXIT:
+                    break
+            except GRPCError as grpcError:
+                if int(grpcError.message) == RokBannerlordGrpcStatuses.NO_ACTIVE_SUBSCRIPTIONS:
+                    launcher_context.reset_context("Looks like you don't have active subscriptions.\nPlease make sure you enter correct api-key or you bought subscription.")
 
             imgui.end()
             gl.glClearColor(1.0, 1.0, 1.0, 1)
