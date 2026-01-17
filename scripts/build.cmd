@@ -1,0 +1,1 @@
+PyInstaller -y .\rok_bannerlord_launcher_v2.spec
