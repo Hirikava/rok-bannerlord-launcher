@@ -9,4 +9,6 @@ class ExternalServicesRegistrar:
     def configure(container: punq.Container):
         container.register(
             RokPackageServiceFactory,
-            instance=RokPackageServiceFactory("localhost", 7272))
+            instance=RokPackageServiceFactory(
+                "rokbannerlord.ru",
+                7272))
